@@ -1,8 +1,6 @@
 const inquirer = require('inquirer');
 const { Pool } = require('pg');
 
-const PORT = process.env.PORT || 3001;
-
 const pool = new Pool(
     {
         user: 'postgres',
@@ -24,7 +22,12 @@ const viewDepartments = async () => {
 }
 
 const viewRoles = async () => {
-    const query = 'SELECT * FROM roles';
+    const query = `
+    SELECT roles.id, roles.title, departments.name 
+    AS department, roles.salary 
+    FROM roles
+    JOIN departments ON roles.department_id = departments.id`;
+
     const { rows } = await pool
         .query(query);
     console.table(rows);
@@ -32,7 +35,16 @@ const viewRoles = async () => {
 }
 
 const viewEmployees = async () => {
-    const query = 'SELECT * FROM employees';
+    const query = `
+    SELECT employees.id, employees.first_name, employees.last_name, roles.title, departments.name
+    AS department, roles.salary, CONCAT(manager.first_name, ' ', manager.last_name) 
+    AS manager
+    FROM employees
+    JOIN roles ON employees.role_id = roles.id
+    JOIN departments ON roles.department_id = departments.id
+    LEFT JOIN employees manager ON employees.manager_id = manager.id
+    `;
+
     const { rows } = await pool
         .query(query);
     console.table(rows);
@@ -53,6 +65,13 @@ const addDepartment = async () => {
 }
 
 const addRole = async () => {
+
+    const departments = await pool.query('SELECT * FROM departments');
+    const departmentChoices = departments.rows.map(department => ({
+        name: department.name,
+        value: department.id
+    }));
+
     const { title, salary, departmentId } = await inquirer.prompt([
         {
             name: 'title',
@@ -66,8 +85,9 @@ const addRole = async () => {
         },
         {
             name: 'departmentId',
-            type: 'input',
-            message: 'What is the department ID of the role?'
+            type: 'list',
+            message: 'What is the department of the role?',
+            choices: departmentChoices
         }
     ]);
 
@@ -78,6 +98,19 @@ const addRole = async () => {
 }
 
 const addEmployee = async () => {
+    const roles = await pool.query('SELECT * FROM roles');
+    const roleChoices = roles.rows.map(role => ({
+        name: role.title,
+        value: role.id
+    }));
+
+    const employees = await pool.query('SELECT * FROM employees');
+    const employeeChoices = employees.rows.map(employee => ({
+
+        name: `${employee.first_name} ${employee.last_name}`,
+        value: employee.id
+    }));
+
     const { firstName, lastName, roleId, managerId } = await inquirer.prompt([
         {
             name: 'firstName',
@@ -91,13 +124,15 @@ const addEmployee = async () => {
         },
         {
             name: 'roleId',
-            type: 'input',
-            message: 'What is the role ID of the employee?'
+            type: 'list',
+            message: 'What is their role?',
+            choices: roleChoices
         },
         {
             name: 'managerId',
-            type: 'input',
-            message: 'What is the manager ID of the employee?'
+            type: 'list',
+            message: 'Who is their manager?',
+            choices: employeeChoices
         }
     ]);
 
@@ -106,6 +141,42 @@ const addEmployee = async () => {
     console.log('Employee added!');
     startApp();
 }
+
+const updateEmployeeRole = async () => {
+
+    const employees = await pool.query('SELECT * FROM employees');
+    const employeeChoices = employees.rows.map(employee => ({
+        name: `${employee.first_name} ${employee.last_name}`,
+        value: employee.id
+    }));
+    
+    const roles = await pool.query('SELECT * FROM roles');
+    const roleChoices = roles.rows.map(role => ({
+        name: role.title,
+        value: role.id
+    }));
+
+    const { employeeId, roleId } = await inquirer.prompt([
+        {
+            name: 'employeeId',
+            type: 'list',
+            message: 'Which employee would you like to update?',
+            choices: employeeChoices
+        },
+        {
+            name: 'roleId',
+            type: 'list',
+            message: 'What is their new role?',
+            choices: roleChoices
+        }
+    ]);
+
+    const query = 'UPDATE employees SET role_id = $1 WHERE id = $2';
+    await pool.query(query, [roleId, employeeId]);
+    console.log('Employee role updated!');
+    startApp();
+}
+
 
 
 const startApp = async () => {
